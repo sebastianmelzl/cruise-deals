@@ -43,11 +43,11 @@ export abstract class BaseScraper {
     return { ...withMeta, dealScore: total };
   }
 
-  protected async saveScreenshot(page: { screenshot(opts: { path: string }): Promise<void> }, name: string): Promise<void> {
+  protected async saveScreenshot(page: unknown, name: string): Promise<void> {
     try {
       await mkdir(this.context.screenshotDir, { recursive: true });
       const path = join(this.context.screenshotDir, `${this.config.id}_${name}_${Date.now()}.png`);
-      await page.screenshot({ path });
+      await (page as { screenshot(opts: { path: string }): Promise<void> }).screenshot({ path });
       this.log.info({ path }, 'Screenshot saved');
     } catch (err) {
       this.log.warn({ err }, 'Failed to save screenshot');

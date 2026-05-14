@@ -99,7 +99,7 @@ export class KreuzfahrtenDeScraper extends BaseScraper {
       }
     } catch (err) {
       this.log.error({ err }, 'Scraper failed');
-      await this.saveScreenshot(page as Parameters<typeof this.saveScreenshot>[0], 'error');
+      await this.saveScreenshot(page, 'error');
     } finally {
       await ctx.close();
     }
