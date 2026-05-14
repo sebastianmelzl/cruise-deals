@@ -12,7 +12,7 @@ COPY packages/shared/package*.json ./packages/shared/
 COPY packages/scrapers/package*.json ./packages/scrapers/
 COPY apps/api/package*.json ./apps/api/
 COPY apps/web/package*.json ./apps/web/
-RUN npm ci --legacy-peer-deps
+RUN npm install --legacy-peer-deps
 
 # Copy source
 COPY . .
