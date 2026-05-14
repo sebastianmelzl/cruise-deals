@@ -6,12 +6,12 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
-# Install all dependencies (workspace-aware)
-COPY package*.json ./
-COPY packages/shared/package*.json ./packages/shared/
-COPY packages/scrapers/package*.json ./packages/scrapers/
-COPY apps/api/package*.json ./apps/api/
-COPY apps/web/package*.json ./apps/web/
+# Copy all package manifests first for layer caching
+COPY package.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/scrapers/package.json ./packages/scrapers/
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
 RUN npm install --legacy-peer-deps
 
 # Copy source
