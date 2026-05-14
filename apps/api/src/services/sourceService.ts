@@ -72,6 +72,13 @@ export function setSourceEnabled(db: Database.Database, id: string, enabled: boo
   return dbToSourceState(updated);
 }
 
+export function getEnabledAllowedSourceIds(db: Database.Database): Set<string> {
+  const rows = db.prepare<[], { id: string }>(
+    'SELECT id FROM cruise_sources WHERE enabled = 1 AND allowed = 1'
+  ).all();
+  return new Set(rows.map((r) => r.id));
+}
+
 export function getAllSources(db: Database.Database): SourceState[] {
   const rows = db.prepare<[], DbSource>('SELECT * FROM cruise_sources ORDER BY name').all();
   return rows.map(dbToSourceState);

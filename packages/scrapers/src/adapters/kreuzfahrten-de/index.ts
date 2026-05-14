@@ -32,31 +32,30 @@ import { BaseScraper, withRetry, type ScraperContext } from '../../core/base.js'
 import { newContext } from '../../core/browser.js';
 import type { SourceConfig } from '@cruise-deals/shared';
 
-// TODO: Verify these selectors by inspecting live DOM
+// Selectors verified against kreuzfahrten.de/angebote deal-card widget (May 2026).
+// Each card represents grouped deals for a cruise line/route — not individual departures.
 const SELECTORS = {
-  // URL to search results — adjust query params as needed
-  searchUrl: 'https://www.kreuzfahrten.de/kreuzfahrten/?sort=preis_asc',
+  searchUrl: 'https://www.kreuzfahrten.de/angebote',
 
-  // Selector for the "load more" or pagination button
-  loadMoreButton: '[data-testid="load-more"], .load-more-button, button[aria-label*="mehr"]',
+  loadMoreButton: '.load-more, [class*="loadMore"], button[class*="mehr"], .pagination__next',
 
-  // Container for each cruise card
-  cruiseCard: '.cruise-card, [data-testid="cruise-card"], .offer-card',
+  // Each offer card
+  cruiseCard: '.specialItem',
 
-  // Fields within each card — TODO: verify each
-  title: '.cruise-card__title, .offer-title, h2',
-  cruiseLine: '.cruise-card__line, .cruise-line-name, [data-testid="cruise-line"]',
-  shipName: '.cruise-card__ship, .ship-name, [data-testid="ship-name"]',
-  departureDate: '.cruise-card__date, .departure-date, [data-testid="departure-date"]',
-  nights: '.cruise-card__nights, .duration, [data-testid="nights"]',
-  price: '.cruise-card__price, .price-amount, [data-testid="price"]',
-  departurePort: '.cruise-card__port, .departure-port',
-  destination: '.cruise-card__destination, .destination-name',
-  boardType: '.cruise-card__board, .board-type',
-  cabinType: '.cruise-card__cabin, .cabin-type',
-  itinerary: '.cruise-card__route, .itinerary-summary',
-  imageUrl: '.cruise-card__image img, .offer-image img',
-  bookingLink: 'a.cruise-card__link, a.offer-link, a[data-testid="booking-link"]',
+  // Fields within each card
+  title: '.subtitle',           // offer/route name e.g. "Last Minute Nordeuropa"
+  cruiseLine: '.title',         // cruise line e.g. "AIDA Cruises"
+  shipName: '.subtitle',        // reuse subtitle — ship name not always separate
+  departureDate: '.zeitraum',   // date range e.g. "Mai - September 2026"
+  nights: '.route',             // e.g. "z. B. 7 Nächte ab/bis Kiel"
+  price: 'span.price',          // e.g. "699,-"
+  departurePort: '.route',      // same element — parsed by normalizeCard
+  destination: '.subtitle',     // destination often embedded in subtitle
+  boardType: '',                // not explicitly shown in card
+  cabinType: '.priceCategory',  // e.g. "Innen", "Außen", "Balkon"
+  itinerary: '.route',
+  imageUrl: '.specialImageWrapper img',
+  bookingLink: 'a.button-highlight, .specialItem > a',
 };
 
 const MAX_PAGES = 5; // Limit pages per run — conservative
@@ -144,17 +143,25 @@ export class KreuzfahrtenDeScraper extends BaseScraper {
     const title = trimStr(raw.title);
     if (!title) return null;
 
-    const nights = parseNights(raw.nights);
-    const priceTotal = parsePrice(raw.price);
+    // Route field: "z. B. 7 Nächte ab/bis Kiel" — extract nights and port
+    const routeText = raw.nights ?? '';
+    const nights = parseNights(routeText);
+    const portMatch = routeText.match(/ab(?:\/bis)?\s+([A-Za-zÄÖÜäöüß\s\-]+)$/i);
+    const departurePort = portMatch ? trimStr(portMatch[1]) : trimStr(raw.departurePort);
+
+    // Price: "699,-" → strip trailing ",-" before parsing
+    const priceStr = raw.price ? raw.price.replace(/[,\-]+$/, '').trim() : null;
+    const priceTotal = parsePrice(priceStr);
     const pricePerNight =
       priceTotal !== null && nights !== null && nights > 0
         ? Math.round((priceTotal / nights) * 100) / 100
         : null;
 
+    // Date range "Mai - September 2026" — take first month as approximate departure
     const departureDate = parseIsoDate(raw.departureDate);
-    const region = normalizeDestinationRegion(raw.destination);
 
-    // Build a full source URL from relative booking link
+    const region = normalizeDestinationRegion(raw.destination ?? raw.title);
+
     const sourceUrl = raw.bookingLink
       ? raw.bookingLink.startsWith('http')
         ? raw.bookingLink
@@ -165,13 +172,13 @@ export class KreuzfahrtenDeScraper extends BaseScraper {
       source: this.config.id,
       sourceUrl,
       cruiseLine: trimStr(raw.cruiseLine),
-      shipName: trimStr(raw.shipName),
+      shipName: trimStr(raw.shipName) ?? trimStr(raw.cruiseLine),
       title,
-      departurePort: trimStr(raw.departurePort),
+      departurePort: departurePort ?? null,
       destinationRegion: region,
       itinerarySummary: trimStr(raw.itinerary),
       departureDate,
-      returnDate: null, // not always available on card level
+      returnDate: null,
       nights,
       cabinType: normalizeCabinType(raw.cabinType),
       boardType: normalizeBoardType(raw.boardType),
@@ -179,7 +186,7 @@ export class KreuzfahrtenDeScraper extends BaseScraper {
       pricePerNight,
       currency: 'EUR',
       taxesIncluded: null,
-      availabilityText: null,
+      availabilityText: trimStr(raw.departureDate),
       bookingLabel: 'Angebot ansehen',
       imageUrl: raw.imageUrl ? (raw.imageUrl.startsWith('http') ? raw.imageUrl : `${this.config.baseUrl}${raw.imageUrl}`) : null,
     };

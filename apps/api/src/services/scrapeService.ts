@@ -4,7 +4,7 @@ import { SOURCES, MockScraper, KreuzfahrtenDeScraper, KreuzfahrtDeScraper, close
 import type { BaseScraper, ScraperContext } from '@cruise-deals/scrapers';
 import type { SourceConfig, ScrapeRunResult } from '@cruise-deals/shared';
 import { upsertCruises } from './cruiseService.js';
-import { updateSourceStatus } from './sourceService.js';
+import { updateSourceStatus, getEnabledAllowedSourceIds } from './sourceService.js';
 import pino from 'pino';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -31,8 +31,9 @@ export async function runScrape(
   const startedAt = new Date().toISOString();
   const results: ScrapeRunResult[] = [];
 
+  const enabledIds = getEnabledAllowedSourceIds(db);
   const targets = SOURCES.filter((s) => {
-    if (!s.enabled || !s.allowed) return false;
+    if (!enabledIds.has(s.id)) return false;
     if (sourceIds && sourceIds.length > 0) return sourceIds.includes(s.id);
     return true;
   });

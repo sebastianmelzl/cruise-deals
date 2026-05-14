@@ -96,6 +96,11 @@ export function listCruises(
   const conditions: string[] = [];
   const params: (string | number)[] = [];
 
+  // Hide cruises from disabled sources (e.g. mock toggled off)
+  conditions.push(
+    'source IN (SELECT id FROM cruise_sources WHERE enabled = 1 AND allowed = 1)'
+  );
+
   // Only future or near-future departures by default
   if (!filters.departureMonth) {
     conditions.push("(departure_date IS NULL OR departure_date >= date('now', '-7 days'))");
@@ -196,8 +201,10 @@ export interface FilterOptions {
 }
 
 export function getFilterOptions(db: Database.Database): FilterOptions {
+  const enabledFilter = 'source IN (SELECT id FROM cruise_sources WHERE enabled = 1 AND allowed = 1)';
+
   const distinct = <T extends string>(col: string): T[] =>
-    db.prepare<[], { val: T }>(`SELECT DISTINCT ${col} as val FROM cruises WHERE ${col} IS NOT NULL ORDER BY val`)
+    db.prepare<[], { val: T }>(`SELECT DISTINCT ${col} as val FROM cruises WHERE ${col} IS NOT NULL AND ${enabledFilter} ORDER BY val`)
       .all()
       .map((r) => r.val);
 
@@ -206,7 +213,7 @@ export function getFilterOptions(db: Database.Database): FilterOptions {
        MIN(price_total) as minPrice, MAX(price_total) as maxPrice,
        MIN(nights) as minNights, MAX(nights) as maxNights,
        MIN(departure_date) as minDate, MAX(departure_date) as maxDate
-     FROM cruises`
+     FROM cruises WHERE ${enabledFilter}`
   ).get();
 
   return {
