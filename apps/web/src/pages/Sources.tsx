@@ -1,12 +1,18 @@
-import { useQuery } from '@tanstack/react-query';
-import { fetchSources } from '../api/client.ts';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { fetchSources, patchSource } from '../api/client.ts';
 import { SourceStatusBadge } from '../components/SourceStatusBadge.tsx';
 import { ExternalLink, Globe, Chrome, Clock } from 'lucide-react';
 
 export function Sources() {
+  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ['sources'],
     queryFn: fetchSources,
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => patchSource(id, enabled),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources'] }),
   });
 
   return (
@@ -63,24 +69,48 @@ export function Sources() {
                   )}
                 </div>
 
-                <div className="flex flex-col items-end gap-1 shrink-0 text-xs text-slate-400 dark:text-slate-500">
-                  <a
-                    href={source.baseUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 hover:text-ocean-600 dark:hover:text-ocean-400 transition-colors"
-                  >
-                    <Globe className="w-3 h-3" />
-                    {source.id}
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                  {source.lastScrapedAt && (
-                    <span className="inline-flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {new Date(source.lastScrapedAt).toLocaleString('de-DE')}
-                    </span>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  {source.allowed && (
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={source.enabled}
+                      disabled={toggleMutation.isPending}
+                      onClick={() => toggleMutation.mutate({ id: source.id, enabled: !source.enabled })}
+                      className={[
+                        'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ocean-500 focus:ring-offset-2 disabled:opacity-50',
+                        source.enabled
+                          ? 'bg-ocean-600 dark:bg-ocean-500'
+                          : 'bg-slate-300 dark:bg-slate-600',
+                      ].join(' ')}
+                    >
+                      <span
+                        className={[
+                          'inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
+                          source.enabled ? 'translate-x-6' : 'translate-x-1',
+                        ].join(' ')}
+                      />
+                    </button>
                   )}
-                  <span>{source.rateLimitMs}ms Rate Limit</span>
+                  <div className="flex flex-col items-end gap-1 text-xs text-slate-400 dark:text-slate-500">
+                    <a
+                      href={source.baseUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 hover:text-ocean-600 dark:hover:text-ocean-400 transition-colors"
+                    >
+                      <Globe className="w-3 h-3" />
+                      {source.id}
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                    {source.lastScrapedAt && (
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(source.lastScrapedAt).toLocaleString('de-DE')}
+                      </span>
+                    )}
+                    <span>{source.rateLimitMs}ms Rate Limit</span>
+                  </div>
                 </div>
               </div>
             </div>

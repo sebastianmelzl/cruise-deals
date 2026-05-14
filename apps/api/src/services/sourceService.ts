@@ -35,13 +35,14 @@ function dbToSourceState(row: DbSource): SourceState {
 }
 
 export function syncSources(db: Database.Database): void {
+  // On conflict: preserve the user-toggled `enabled` value — do NOT overwrite it.
+  // `allowed` is always authoritative from config (legal constraint, can't be toggled).
   const upsert = db.prepare(`
     INSERT INTO cruise_sources (id, name, base_url, enabled, allowed, requires_browser, rate_limit_ms, notes, legal_notes, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       base_url = excluded.base_url,
-      enabled = excluded.enabled,
       allowed = excluded.allowed,
       requires_browser = excluded.requires_browser,
       rate_limit_ms = excluded.rate_limit_ms,
@@ -53,11 +54,22 @@ export function syncSources(db: Database.Database): void {
   const sync = db.transaction(() => {
     for (const s of SOURCES) {
       const existing = db.prepare<[string], DbSource>('SELECT * FROM cruise_sources WHERE id = ?').get(s.id);
-      const status = existing?.status ?? (s.enabled && s.allowed ? 'disabled' : 'disabled');
+      const status = existing?.status ?? 'disabled';
       upsert.run(s.id, s.name, s.baseUrl, s.enabled ? 1 : 0, s.allowed ? 1 : 0, s.requiresBrowser ? 1 : 0, s.rateLimitMs, s.notes, s.legalNotes ?? null, status);
     }
   });
   sync();
+}
+
+export function setSourceEnabled(db: Database.Database, id: string, enabled: boolean): SourceState | null {
+  const row = db.prepare<[string], DbSource>('SELECT * FROM cruise_sources WHERE id = ?').get(id);
+  if (!row) return null;
+  if (!row.allowed) return null; // can't enable a legally disallowed source
+  db.prepare(`
+    UPDATE cruise_sources SET enabled = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?
+  `).run(enabled ? 1 : 0, id);
+  const updated = db.prepare<[string], DbSource>('SELECT * FROM cruise_sources WHERE id = ?').get(id)!;
+  return dbToSourceState(updated);
 }
 
 export function getAllSources(db: Database.Database): SourceState[] {

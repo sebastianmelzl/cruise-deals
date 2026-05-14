@@ -46,6 +46,19 @@ export async function fetchSources(): Promise<{ sources: SourceState[] }> {
   return get<{ sources: SourceState[] }>(`${BASE}/sources`);
 }
 
+export async function patchSource(id: string, enabled: boolean): Promise<{ source: SourceState }> {
+  const res = await fetch(`${BASE}/sources/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`API ${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
 export async function triggerScrape(sourceIds?: string[]): Promise<unknown> {
   const res = await fetch(`${BASE}/scrape/run`, {
     method: 'POST',
