@@ -26,8 +26,11 @@ export function parseIsoDate(raw: string | null | undefined): string | null {
 export function parsePrice(raw: string | number | null | undefined): number | null {
   if (raw === null || raw === undefined) return null;
   if (typeof raw === 'number') return isFinite(raw) ? raw : null;
-  const cleaned = raw.replace(/[^\d.,]/g, '').replace(',', '.');
-  const val = parseFloat(cleaned);
+  let s = raw.replace(/[^\d.,]/g, '');
+  // German format: dot = thousands separator ("1.299,00" or "1.299,-")
+  if (/\d\.\d{3}/.test(s)) s = s.replace(/\./g, '');
+  s = s.replace(',', '.');
+  const val = parseFloat(s);
   return isFinite(val) ? val : null;
 }
 
