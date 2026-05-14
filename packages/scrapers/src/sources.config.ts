@@ -38,11 +38,11 @@ export const SOURCES: SourceConfig[] = [
     id: 'kreuzfahrten-de',
     name: 'kreuzfahrten.de',
     baseUrl: 'https://www.kreuzfahrten.de',
-    enabled: false, // flip to true after verifying selectors live
-    allowed: true,  // assess before enabling
-    requiresBrowser: true,
-    rateLimitMs: 3500,
-    notes: 'JS-rendered SPA. Adapter implemented as example — selectors marked TODO, verify before use.',
+    enabled: false,
+    allowed: true,
+    requiresBrowser: false,
+    rateLimitMs: 2000,
+    notes: '/angebote is server-rendered HTML. Cheerio adapter, selectors verified May 2026.',
     legalNotes: 'Verify robots.txt /kreuzfahrten/ path and ToS before production use.',
   },
 
