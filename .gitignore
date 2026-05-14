@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+data/cruises.db
+data/screenshots/
+data/snapshots/
+*.db-shm
+*.db-wal
