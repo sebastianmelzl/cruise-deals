@@ -1,6 +1,8 @@
 FROM node:22-slim AS base
 WORKDIR /app
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright-browsers
+
 # Install native build tools needed for better-sqlite3
 RUN apt-get update && \
     apt-get install -y --no-install-recommends python3 make g++ && \
@@ -24,14 +26,14 @@ RUN npm run build:production
 FROM node:22-slim AS runner
 WORKDIR /app
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
-
 ENV NODE_ENV=production
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright-browsers
 
-# Copy only what's needed at runtime
+# Copy node_modules first so the playwright CLI is available
 COPY --from=base /app/node_modules ./node_modules
+
+# Install Playwright Chromium browser + all required system libraries
+RUN node node_modules/.bin/playwright install chromium --with-deps
 COPY --from=base /app/packages/shared/dist ./packages/shared/dist
 COPY --from=base /app/packages/scrapers/dist ./packages/scrapers/dist
 COPY --from=base /app/packages/shared/package.json ./packages/shared/
