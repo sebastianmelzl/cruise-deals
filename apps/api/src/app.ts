@@ -24,11 +24,14 @@ export function createApp() {
   app.use('/api/scrape', scrapeRouter);
 
   // In production: serve the pre-built React frontend
+  // __dirname = /app/apps/api/dist  →  ../../web/dist = /app/apps/web/dist
   if (process.env.NODE_ENV === 'production') {
-    const webDist = join(__dirname, '../../../web/dist');
+    const webDist = join(__dirname, '../../web/dist');
     if (existsSync(webDist)) {
       app.use(express.static(webDist));
       app.get('*', (_req, res) => res.sendFile(join(webDist, 'index.html')));
+    } else {
+      console.warn('Frontend dist not found at', webDist);
     }
   }
 
