@@ -98,7 +98,7 @@ export function getEnabledAllowedSourceConfigs(db: Database.Database): SourceCon
     const base = SOURCES.find((s) => s.id === row.id);
     if (!base) return null;
     const dbParams: Record<string, string> | null = row.search_params ? JSON.parse(row.search_params) : null;
-    return { ...base, searchParams: dbParams ?? base.searchParams };
+    return { ...base, searchParams: dbParams ?? base.searchParams } as SourceConfig;
   }).filter((s): s is SourceConfig => s !== null);
 }
 
