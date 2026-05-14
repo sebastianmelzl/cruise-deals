@@ -50,6 +50,7 @@ export function syncSources(db: Database.Database): void {
       rate_limit_ms = excluded.rate_limit_ms,
       notes = excluded.notes,
       legal_notes = excluded.legal_notes,
+      search_params = COALESCE(cruise_sources.search_params, excluded.search_params),
       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
   `);
 
