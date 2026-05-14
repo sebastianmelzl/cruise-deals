@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS cruise_sources (
   notes             TEXT,
   legal_notes       TEXT,
   status            TEXT NOT NULL DEFAULT 'disabled',
+  search_params     TEXT,            -- JSON: user-configured search/filter parameters
   last_scraped_at   TEXT,
   last_error        TEXT,
   created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

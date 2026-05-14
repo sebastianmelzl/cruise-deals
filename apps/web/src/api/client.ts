@@ -46,11 +46,14 @@ export async function fetchSources(): Promise<{ sources: SourceState[] }> {
   return get<{ sources: SourceState[] }>(`${BASE}/sources`);
 }
 
-export async function patchSource(id: string, enabled: boolean): Promise<{ source: SourceState }> {
+export async function patchSource(
+  id: string,
+  payload: { enabled: boolean } | { searchParams: Record<string, string> }
+): Promise<{ source: SourceState }> {
   const res = await fetch(`${BASE}/sources/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const body = await res.text();

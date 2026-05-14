@@ -26,6 +26,9 @@ export function getDb(): Database.Database {
   const schema = readFileSync(schemaPath, 'utf-8');
   _db.exec(schema);
 
+  // Migrations for existing DBs
+  try { _db.exec('ALTER TABLE cruise_sources ADD COLUMN search_params TEXT'); } catch { /* already exists */ }
+
   return _db;
 }
 

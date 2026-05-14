@@ -10,6 +10,7 @@ export interface SourceConfig {
   rateLimitMs: number;
   notes: string;
   legalNotes?: string;
+  searchParams?: Record<string, string>; // default search/filter parameters
 }
 
 export interface SourceState {
@@ -25,6 +26,7 @@ export interface SourceState {
   status: SourceStatus;
   lastScrapedAt: string | null;
   lastError: string | null;
+  searchParams: Record<string, string> | null;
 }
 
 export interface ScrapeRunResult {

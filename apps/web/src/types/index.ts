@@ -84,6 +84,7 @@ export interface SourceState {
   status: 'working' | 'partial' | 'blocked' | 'disabled';
   lastScrapedAt: string | null;
   lastError: string | null;
+  searchParams: Record<string, string> | null;
 }
 
 export type ViewMode = 'cards' | 'table';

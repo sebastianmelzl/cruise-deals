@@ -1,14 +1,17 @@
 /**
- * Adapter: kreuzfahrten.de
+ * Adapter: kreuzfahrten.de — /termin/ search results
  *
- * The /angebote page is server-rendered HTML — no Playwright required.
- * Each card is a grouped deal (cruise line + route for a date range),
- * not an individual departure.
+ * Server-rendered HTML, Cheerio scraper, paginated via ?page=N.
+ * Search parameters are read from this.config.searchParams and forwarded
+ * to the URL query string (except _maxPages which controls pagination depth).
+ *
+ * Selectors verified against live DOM, May 2026.
  */
 
 import { load } from 'cheerio';
 import type { CruiseInsert } from '@cruise-deals/shared';
 import {
+  parseIsoDate,
   parsePrice,
   parseNights,
   normalizeCabinType,
@@ -16,10 +19,11 @@ import {
   normalizeDestinationRegion,
   trimStr,
 } from '@cruise-deals/shared';
-import { BaseScraper, withRetry, type ScraperContext } from '../../core/base.js';
+import { BaseScraper, withRetry, sleep, type ScraperContext } from '../../core/base.js';
 import type { SourceConfig } from '@cruise-deals/shared';
 
-const SEARCH_URL = 'https://www.kreuzfahrten.de/angebote';
+const BASE_URL = 'https://www.kreuzfahrten.de';
+const SEARCH_PATH = '/termin/';
 
 const DESKTOP_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -32,104 +36,146 @@ export class KreuzfahrtenDeScraper extends BaseScraper {
   async run(): Promise<CruiseInsert[]> {
     this.log.info('Starting kreuzfahrten.de scraper');
 
-    const html = await withRetry(async () => {
-      const res = await fetch(SEARCH_URL, {
-        headers: {
-          'User-Agent': DESKTOP_UA,
-          'Accept': 'text/html,application/xhtml+xml',
-          'Accept-Language': 'de-DE,de;q=0.9',
-        },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status} from ${SEARCH_URL}`);
-      return res.text();
-    });
+    const params = this.config.searchParams ?? {};
+    const maxPages = parseInt(params['_maxPages'] ?? '5', 10);
 
-    const $ = load(html);
+    // Build base query params (strip internal _ params)
+    const baseQuery: Record<string, string> = { 'per-page': '20', srcOrderBy: 'preis_asc' };
+    for (const [k, v] of Object.entries(params)) {
+      if (!k.startsWith('_') && v !== '' && v !== '0' || k === 'srcPriceMin' || k === 'per-page') {
+        baseQuery[k] = v;
+      }
+    }
+    // Always include these even if 0
+    baseQuery['srcPriceMin'] = params['srcPriceMin'] ?? '0';
+    baseQuery['srcPriceMax'] = params['srcPriceMax'] ?? '0';
+
     const results: CruiseInsert[] = [];
 
-    $('.specialItem').each((_i, el) => {
-      const card = $(el);
+    for (let page = 1; page <= maxPages; page++) {
+      const qs = new URLSearchParams({ ...baseQuery, page: String(page) }).toString();
+      const url = `${BASE_URL}${SEARCH_PATH}?${qs}`;
+      this.log.info({ page, url }, 'Fetching page');
 
-      const raw: Record<string, string | null> = {
-        title:       card.find('.subtitle').first().text().trim() || null,
-        cruiseLine:  card.find('.title').first().text().trim() || null,
-        departureDate: card.find('.zeitraum').first().text().trim() || null,
-        route:       card.find('.route').first().text().trim() || null,
-        price:       card.find('.price').first().text().trim() || null,
-        cabinType:   card.find('.priceCategory').first().text().trim() || null,
-        imageUrl:    card.find('.specialImageWrapper img').first().attr('src') ?? null,
-        bookingLink: card.find('a.button-highlight').first().attr('href') ?? null,
-      };
+      let html: string;
+      try {
+        html = await withRetry(async () => {
+          const res = await fetch(url, {
+            headers: {
+              'User-Agent': DESKTOP_UA,
+              'Accept': 'text/html,application/xhtml+xml',
+              'Accept-Language': 'de-DE,de;q=0.9',
+            },
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+          return res.text();
+        });
+      } catch (err) {
+        this.log.error({ err, page }, 'Failed to fetch page');
+        break;
+      }
 
-      const cruise = this.normalizeCard(raw);
-      if (cruise) results.push(cruise);
-    });
+      const cards = this.extractCards(html);
+      this.log.info({ page, cards: cards.length }, 'Extracted cards');
 
-    this.log.info({ total: results.length }, 'kreuzfahrten.de scraper done');
+      if (cards.length === 0) {
+        if (page === 1) {
+          await this.saveSnapshot(html, 'no-cards');
+          this.log.warn('No cards on page 1 — HTML snapshot saved');
+        }
+        break; // no more results
+      }
 
-    if (results.length === 0) {
-      await this.saveSnapshot(html, 'no-cards');
-      this.log.warn('No cards found — HTML snapshot saved');
+      results.push(...cards);
+
+      if (page < maxPages) await sleep(this.config.rateLimitMs);
     }
 
+    this.log.info({ total: results.length }, 'kreuzfahrten.de scraper done');
     return results;
   }
 
-  private normalizeCard(raw: Record<string, string | null>): CruiseInsert | null {
-    const title = trimStr(raw.title);
-    if (!title) return null;
+  private extractCards(html: string): CruiseInsert[] {
+    const $ = load(html);
+    const results: CruiseInsert[] = [];
 
-    // route: "z. B. 7 Nächte ab/bis Kiel"
-    const routeText = raw.route ?? '';
-    const nights = parseNights(routeText);
-    const portMatch = routeText.match(/ab(?:\/bis)?\s+([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\s\-]*?)(?:\s*$)/i);
-    const departurePort = portMatch ? trimStr(portMatch[1]) : null;
+    $('.routeListItem').each((_i, el) => {
+      const card = $(el);
 
-    // price: "699,-"
-    const priceStr = raw.price?.replace(/[,\-]+$/, '').trim() ?? null;
-    const priceTotal = parsePrice(priceStr);
-    const pricePerNight =
-      priceTotal !== null && nights !== null && nights > 0
-        ? Math.round((priceTotal / nights) * 100) / 100
+      const routeNameRaw = card.find('.routeName').first().text().trim();
+      const nights = parseNights(routeNameRaw);
+      // Title: strip the leading "X Nächte" prefix
+      const title = trimStr(routeNameRaw.replace(/^\d+\s*Nächte?\s*/i, '')) || trimStr(routeNameRaw);
+      if (!title) return;
+
+      const shipName = trimStr(card.find('.shipName a.lnkCruise').first().text());
+      const bookingHref = card.find('.shipName a.lnkCruise').first().attr('href') ?? null;
+      const cruiseLine = trimStr(card.find('img.vendorPic').first().attr('alt'));
+
+      // Ports: "Kiel - Kiel" or "Kiel - Kiel"
+      const harborText = card.find('.harborNames').first().text().trim();
+      const portParts = harborText.split(/\s*[ \-]+\s*/);
+      const departurePort = trimStr(portParts[0]?.replace(/[^\wÄÖÜäöüß\s\-]/g, ''));
+
+      // Active (non-sold-out) departure date
+      const activeDatum = card.find('.alleTermine .aktiv:not(.ausgebucht)').first();
+      const depDateRaw = activeDatum.attr('data-datum-von') ?? null;
+      const retDateRaw = activeDatum.attr('data-datum-bis') ?? null;
+      const departureDate = parseIsoDate(depDateRaw);
+      const returnDate = parseIsoDate(retDateRaw);
+
+      // Price: in .preisWrapper span.price:not(.hidden), value in inner span
+      const priceSpan = card.find('.preisWrapper span.price').not('.hidden').first();
+      const priceText = priceSpan.find('span').last().text().trim(); // inner span: "€ 298,-"
+      const priceTotal = parsePrice(priceText);
+
+      const sourceUrl = bookingHref
+        ? bookingHref.startsWith('http') ? bookingHref : `${BASE_URL}${bookingHref}`
         : null;
 
-    const region = normalizeDestinationRegion(raw.title);
+      // Image: first carousel img (not the vendor logo)
+      const imgSrc = card.find('.carousel-item img').first().attr('src')
+        ?? card.find('.bildWrapper img:not(.vendorPic)').first().attr('src')
+        ?? null;
+      const imageUrl = imgSrc
+        ? (imgSrc.startsWith('http') ? imgSrc : `${BASE_URL}${imgSrc}`)
+        : null;
 
-    const bookingHref = raw.bookingLink ?? null;
-    const sourceUrl = bookingHref
-      ? bookingHref.startsWith('http')
-        ? bookingHref
-        : `${this.config.baseUrl}${bookingHref}`
-      : null;
+      const pricePerNight =
+        priceTotal !== null && nights !== null && nights > 0
+          ? Math.round((priceTotal / nights) * 100) / 100
+          : null;
 
-    const imageHref = raw.imageUrl ?? null;
-    const imageUrl = imageHref
-      ? imageHref.startsWith('http') ? imageHref : `${this.config.baseUrl}${imageHref}`
-      : null;
+      const raw: Record<string, unknown> = {
+        routeNameRaw, shipName, cruiseLine, harborText, depDateRaw, retDateRaw, priceText,
+      };
 
-    const partial = {
-      source: this.config.id,
-      sourceUrl,
-      cruiseLine: trimStr(raw.cruiseLine),
-      shipName: trimStr(raw.cruiseLine),
-      title,
-      departurePort,
-      destinationRegion: region,
-      itinerarySummary: routeText || null,
-      departureDate: null,
-      returnDate: null,
-      nights,
-      cabinType: normalizeCabinType(raw.cabinType),
-      boardType: normalizeBoardType(null),
-      priceTotal,
-      pricePerNight,
-      currency: 'EUR',
-      taxesIncluded: null,
-      availabilityText: trimStr(raw.departureDate),
-      bookingLabel: 'Zum Angebot',
-      imageUrl,
-    };
+      const partial = {
+        source: this.config.id,
+        sourceUrl,
+        cruiseLine: cruiseLine ?? null,
+        shipName: shipName ?? null,
+        title,
+        departurePort: departurePort ?? null,
+        destinationRegion: normalizeDestinationRegion(title),
+        itinerarySummary: harborText || null,
+        departureDate,
+        returnDate,
+        nights,
+        cabinType: normalizeCabinType(null),
+        boardType: normalizeBoardType(null),
+        priceTotal,
+        pricePerNight,
+        currency: 'EUR',
+        taxesIncluded: null,
+        availabilityText: null,
+        bookingLabel: 'Zum Angebot',
+        imageUrl,
+      };
 
-    return this.finalizeCruise(partial, raw as Record<string, unknown>);
+      results.push(this.finalizeCruise(partial, raw));
+    });
+
+    return results;
   }
 }

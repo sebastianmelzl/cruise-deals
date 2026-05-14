@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
 import type Database from 'better-sqlite3';
-import { SOURCES, MockScraper, KreuzfahrtenDeScraper, KreuzfahrtDeScraper, closeBrowser } from '@cruise-deals/scrapers';
+import { MockScraper, KreuzfahrtenDeScraper, KreuzfahrtDeScraper, closeBrowser } from '@cruise-deals/scrapers';
 import type { BaseScraper, ScraperContext } from '@cruise-deals/scrapers';
 import type { SourceConfig, ScrapeRunResult } from '@cruise-deals/shared';
 import { upsertCruises } from './cruiseService.js';
-import { updateSourceStatus, getEnabledAllowedSourceIds } from './sourceService.js';
+import { updateSourceStatus, getEnabledAllowedSourceConfigs } from './sourceService.js';
 import pino from 'pino';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -31,9 +31,8 @@ export async function runScrape(
   const startedAt = new Date().toISOString();
   const results: ScrapeRunResult[] = [];
 
-  const enabledIds = getEnabledAllowedSourceIds(db);
-  const targets = SOURCES.filter((s) => {
-    if (!enabledIds.has(s.id)) return false;
+  const allEnabled = getEnabledAllowedSourceConfigs(db);
+  const targets = allEnabled.filter((s) => {
     if (sourceIds && sourceIds.length > 0) return sourceIds.includes(s.id);
     return true;
   });

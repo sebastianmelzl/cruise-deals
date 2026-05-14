@@ -42,7 +42,17 @@ export const SOURCES: SourceConfig[] = [
     allowed: true,
     requiresBrowser: false,
     rateLimitMs: 2000,
-    notes: '/angebote is server-rendered HTML. Cheerio adapter, selectors verified May 2026.',
+    notes: 'Server-rendered HTML. Cheerio adapter scrapes /termin/ search results.',
+    searchParams: {
+      srcOrderBy: 'preis_asc',
+      srcReiseArt: 'Hochsee',
+      srcPriceMin: '0',
+      srcPriceMax: '0',
+      srcRouteDurationMin: '0',
+      srcRouteDurationMax: '0',
+      'per-page': '20',
+      _maxPages: '5',
+    },
     legalNotes: 'Verify robots.txt /kreuzfahrten/ path and ToS before production use.',
   },
 
